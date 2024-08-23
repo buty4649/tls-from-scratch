@@ -1,5 +1,6 @@
 mod error;
 mod ser;
 
+pub use byteorder::{BigEndian, LittleEndian, NativeEndian, NetworkEndian};
 pub use error::Error;
-pub use ser::{to_bytes, bytes_size, Serializer};
+pub use ser::{bytes_size, to_bytes, Serializer};

@@ -2,19 +2,25 @@ use crate::error::Error;
 
 use std::io::Write;
 
-use byteorder::{BigEndian, WriteBytesExt};
+use byteorder::{ByteOrder, NativeEndian, WriteBytesExt};
 use serde::{ser, Serialize};
+use std::marker::PhantomData;
 
 #[derive(Debug)]
-pub struct Serializer {
+pub struct Serializer<T: ByteOrder> {
     output: Vec<u8>,
+    phantom_data: PhantomData<T>,
 }
 
-pub fn to_bytes<T>(value: &T) -> Result<Vec<u8>, Error>
+pub fn to_bytes<S, O>(value: &S) -> Result<Vec<u8>, Error>
 where
-    T: Serialize,
+    S: Serialize,
+    O: ByteOrder,
 {
-    let mut serializer = Serializer { output: Vec::new() };
+    let mut serializer = Serializer::<O> {
+        output: Vec::new(),
+        phantom_data: PhantomData,
+    };
     value.serialize(&mut serializer)?;
     Ok(serializer.output)
 }
@@ -23,12 +29,15 @@ pub fn bytes_size<T>(value: &T) -> Result<usize, Error>
 where
     T: Serialize,
 {
-    let mut serializer = Serializer { output: Vec::new() };
+    let mut serializer = Serializer::<NativeEndian> {
+        output: Vec::new(),
+        phantom_data: PhantomData,
+    };
     value.serialize(&mut serializer)?;
     Ok(serializer.output.len())
 }
 
-impl<'a> ser::Serializer for &'a mut Serializer {
+impl<'a, O: ByteOrder> ser::Serializer for &'a mut Serializer<O> {
     type Ok = ();
     type Error = Error;
 
@@ -49,23 +58,24 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         self.output.write_i8(v).unwrap();
         Ok(())
     }
+
     fn serialize_i16(self, v: i16) -> std::result::Result<Self::Ok, Self::Error> {
-        self.output.write_i16::<BigEndian>(v).unwrap();
+        self.output.write_i16::<O>(v).unwrap();
         Ok(())
     }
 
     fn serialize_i32(self, v: i32) -> std::result::Result<Self::Ok, Self::Error> {
-        self.output.write_i32::<BigEndian>(v).unwrap();
+        self.output.write_i32::<O>(v).unwrap();
         Ok(())
     }
 
     fn serialize_i64(self, v: i64) -> std::result::Result<Self::Ok, Self::Error> {
-        self.output.write_i64::<BigEndian>(v).unwrap();
+        self.output.write_i64::<O>(v).unwrap();
         Ok(())
     }
 
     fn serialize_i128(self, v: i128) -> std::result::Result<Self::Ok, Self::Error> {
-        self.output.write_i128::<BigEndian>(v).unwrap();
+        self.output.write_i128::<O>(v).unwrap();
         Ok(())
     }
 
@@ -75,32 +85,32 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_u16(self, v: u16) -> std::result::Result<Self::Ok, Self::Error> {
-        self.output.write_u16::<BigEndian>(v).unwrap();
+        self.output.write_u16::<O>(v).unwrap();
         Ok(())
     }
 
     fn serialize_u32(self, v: u32) -> std::result::Result<Self::Ok, Self::Error> {
-        self.output.write_u32::<BigEndian>(v).unwrap();
+        self.output.write_u32::<O>(v).unwrap();
         Ok(())
     }
 
     fn serialize_u64(self, v: u64) -> std::result::Result<Self::Ok, Self::Error> {
-        self.output.write_u64::<BigEndian>(v).unwrap();
+        self.output.write_u64::<O>(v).unwrap();
         Ok(())
     }
 
     fn serialize_u128(self, v: u128) -> std::result::Result<Self::Ok, Self::Error> {
-        self.output.write_u128::<BigEndian>(v).unwrap();
+        self.output.write_u128::<O>(v).unwrap();
         Ok(())
     }
 
     fn serialize_f32(self, v: f32) -> std::result::Result<Self::Ok, Self::Error> {
-        self.output.write_f32::<BigEndian>(v).unwrap();
+        self.output.write_f32::<O>(v).unwrap();
         Ok(())
     }
 
     fn serialize_f64(self, v: f64) -> std::result::Result<Self::Ok, Self::Error> {
-        self.output.write_f64::<BigEndian>(v).unwrap();
+        self.output.write_f64::<O>(v).unwrap();
         Ok(())
     }
 
@@ -227,7 +237,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeSeq for &'a mut Serializer {
+impl<'a, O: ByteOrder> ser::SerializeSeq for &'a mut Serializer<O> {
     type Ok = ();
     type Error = Error;
 
@@ -243,7 +253,7 @@ impl<'a> ser::SerializeSeq for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeTuple for &'a mut Serializer {
+impl<'a, O: ByteOrder> ser::SerializeTuple for &'a mut Serializer<O> {
     type Ok = ();
     type Error = Error;
 
@@ -259,7 +269,7 @@ impl<'a> ser::SerializeTuple for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeTupleStruct for &'a mut Serializer {
+impl<'a, O: ByteOrder> ser::SerializeTupleStruct for &'a mut Serializer<O> {
     type Ok = ();
     type Error = Error;
 
@@ -275,7 +285,7 @@ impl<'a> ser::SerializeTupleStruct for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
+impl<'a, O: ByteOrder> ser::SerializeTupleVariant for &'a mut Serializer<O> {
     type Ok = ();
     type Error = Error;
 
@@ -291,7 +301,7 @@ impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeMap for &'a mut Serializer {
+impl<'a, O: ByteOrder> ser::SerializeMap for &'a mut Serializer<O> {
     type Ok = ();
     type Error = Error;
 
@@ -314,7 +324,7 @@ impl<'a> ser::SerializeMap for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeStruct for &'a mut Serializer {
+impl<'a, O: ByteOrder> ser::SerializeStruct for &'a mut Serializer<O> {
     type Ok = ();
     type Error = Error;
 
@@ -335,7 +345,7 @@ impl<'a> ser::SerializeStruct for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
+impl<'a, O: ByteOrder> ser::SerializeStructVariant for &'a mut Serializer<O> {
     type Ok = ();
     type Error = Error;
 

@@ -1,8 +1,9 @@
 use anyhow::Result;
+use ser::NetworkEndian;
 use serde::Serialize;
 use serde_repr::Serialize_repr;
 use std::{
-    io::{BufReader, Write, Read},
+    io::{BufReader, Read, Write},
     net::TcpStream,
     time::{SystemTime, UNIX_EPOCH},
     vec,
@@ -212,7 +213,7 @@ fn main() -> Result<()> {
 
     println!("{:?}", tls_plaintext);
 
-    let data = ser::to_bytes(&tls_plaintext)?;
+    let data = ser::to_bytes::<_, NetworkEndian>(&tls_plaintext)?;
     println!("binary:");
     for (i, b) in data.iter().enumerate() {
         print!("{:02x}", b);
