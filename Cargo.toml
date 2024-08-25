@@ -8,3 +8,5 @@ ser = { path = "ser" }
 anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_repr = "0.1"
+nom = "7.1"
+enum-try-from = "0.0.1"

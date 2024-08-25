@@ -3,33 +3,12 @@ use tls::*;
 
 use anyhow::Result;
 use ser::NetworkEndian;
-use serde::Serialize;
-use serde_repr::Serialize_repr;
 use std::{
-    io::{BufReader, Read, Write},
+    io::{BufRead, BufReader, Read, Write},
     net::TcpStream,
     time::{SystemTime, UNIX_EPOCH},
     vec,
 };
-
-#[repr(C)]
-#[derive(Serialize, Debug)]
-struct TLSPlaintext {
-    content_type: ContentType,
-    protocol_version: ProtocolVersion,
-    length: u16,
-    fragment: Handshake,
-}
-
-#[allow(dead_code)]
-#[repr(u8)]
-#[derive(Serialize_repr, Debug)]
-enum ContentType {
-    ChangeCipherSpec = 20,
-    Alert = 21,
-    Handshake = 22,
-    ApplicationData = 23,
-}
 
 #[allow(dead_code)]
 fn epoch_time() -> u32 {
@@ -52,7 +31,7 @@ fn main() -> Result<()> {
         },
         chipher_suites: CipherSuites {
             length: 2,
-            data: vec![ChiperSuite::TLS_RSA_WITH_AES_128_GCM_SHA256],
+            data: vec![CipherSuite::TLS_RSA_WITH_AES_128_GCM_SHA256],
         },
         compression_methods: CompressionMethods {
             length: 1,
@@ -89,7 +68,7 @@ fn main() -> Result<()> {
         body: HandshakeBody::ClientHello(client_hello),
     };
 
-    let tls_plaintext = TLSPlaintext {
+    let tls_plaintext = TLSRecord {
         content_type: ContentType::Handshake,
         protocol_version: ProtocolVersion::TLSv1_2,
         length: client_hello_size as u16 + 4,
@@ -117,10 +96,10 @@ fn main() -> Result<()> {
     client.write_all(&data)?;
 
     let mut reader = BufReader::new(client);
-    let mut buf = vec![0; 128];
-    let size = reader.read(&mut buf)?;
-
-    println!("response: {:?}", &buf[..size]);
+    let mut buf = [0; 4096];
+    let read_bytes = reader.read(&mut buf)?;
+    let response = deserialize_tls_record(&buf[..read_bytes]);
+    println!("{:?}", response);
 
     Ok(())
 }
