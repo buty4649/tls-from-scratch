@@ -1,22 +1,32 @@
+mod de;
 mod handshake;
 mod hello_messaage;
 
+use de::*;
 pub use handshake::*;
 pub use hello_messaage::*;
 
-use nom::{
-    bytes::complete::take,
-    number::complete::{be_u16, be_u8},
-    IResult,
-};
 use serde::Serialize;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
 use enum_try_from::impl_enum_try_from;
 
-pub fn deserialize_tls_record(input: &[u8]) -> TLSRecord {
-    let (_, record) = TLSRecord::deserialize(input).unwrap();
-    record
+pub fn deserialize_tls_record(input: &[u8], length: usize) -> Vec<TLSRecord> {
+    let mut records = vec![];
+    let mut buffer = Buffer::new(input, length);
+
+    loop {
+        if buffer.length() == 0 {
+            break;
+        }
+
+        let (new_buffer, record) = TLSRecord::deserialize(buffer).unwrap();
+        buffer = new_buffer;
+
+        records.push(record);
+    }
+
+    records
 }
 
 #[repr(C)]
@@ -29,11 +39,14 @@ pub struct TLSRecord {
 }
 
 impl TLSRecord {
-    pub fn deserialize(input: &[u8]) -> IResult<&[u8], TLSRecord> {
+    pub fn deserialize(input: Buffer) -> IResult<TLSRecord> {
         let (input, content_type) = ContentType::deserialize(input)?;
         let (input, protocol_version) = ProtocolVersion::deserialize(input)?;
         let (input, length) = be_u16(input)?;
-        let fragment = Handshake::deserialize(input).unwrap().1;
+
+        let (input, fragment) = take(input, length)?;
+        let fragment = Buffer::new(fragment, length as usize);
+        let (_, fragment) = Handshake::deserialize(fragment)?;
 
         Ok((
             input,
@@ -61,9 +74,23 @@ pub struct Vector<T, D> {
 pub type Opaque<S> = Vector<S, u8>;
 
 impl Opaque<u8> {
-    pub fn deserialize(input: &[u8]) -> IResult<&[u8], Self> {
+    pub fn deserialize(input: Buffer) -> IResult<Self> {
         let (input, length) = be_u8(input)?;
-        let (input, data) = take(length)(input)?;
+        let (input, data) = take(input, length)?;
+        Ok((
+            input,
+            Vector {
+                length,
+                data: data.to_vec(),
+            },
+        ))
+    }
+}
+
+impl Opaque<u24> {
+    pub fn deserialize(input: Buffer) -> IResult<Self> {
+        let (input, length) = u24::deserialize(input)?;
+        let (input, data) = take(input, length)?;
         Ok((
             input,
             Vector {
@@ -91,7 +118,7 @@ impl_enum_try_from! {
 }
 
 impl ProtocolVersion {
-    pub fn deserialize(input: &[u8]) -> IResult<&[u8], Self> {
+    pub fn deserialize(input: Buffer) -> IResult<Self> {
         let (input, version) = be_u16(input)?;
         let version = ProtocolVersion::try_from(version).unwrap();
         Ok((input, version))
@@ -114,7 +141,7 @@ impl_enum_try_from! {
 }
 
 impl ContentType {
-    pub fn deserialize(input: &[u8]) -> IResult<&[u8], Self> {
+    pub fn deserialize(input: Buffer) -> IResult<Self> {
         let (input, content_type) = be_u8(input)?;
         let content_type = ContentType::try_from(content_type).unwrap();
         Ok((input, content_type))
@@ -176,9 +203,78 @@ impl_enum_try_from! {
 }
 
 impl CipherSuite {
-    pub fn deserialize(input: &[u8]) -> IResult<&[u8], Self> {
+    pub fn deserialize(input: Buffer) -> IResult<Self> {
         let (input, suite) = be_u16(input)?;
         let suite = CipherSuite::try_from(suite).unwrap();
         Ok((input, suite))
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy)]
+pub struct u24 {
+    data: u32,
+}
+
+impl u24 {
+    pub fn deserialize(input: Buffer) -> IResult<Self> {
+        let (input, data) = take(input, 3u8)?;
+        let data = u24::from(data);
+        Ok((input, data))
+    }
+}
+
+impl Serialize for u24 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let bytes = [
+            ((self.data >> 16) & 0xff) as u8,
+            ((self.data >> 8) & 0xff) as u8,
+            (self.data & 0xff) as u8,
+        ];
+        serializer.serialize_bytes(&bytes)
+    }
+}
+
+impl From<u32> for u24 {
+    fn from(value: u32) -> Self {
+        u24 {
+            data: value & 0xffffff,
+        }
+    }
+}
+
+impl From<usize> for u24 {
+    fn from(value: usize) -> Self {
+        u24 {
+            data: value as u32 & 0xffffff,
+        }
+    }
+}
+
+impl From<&[u8]> for u24 {
+    fn from(value: &[u8]) -> Self {
+        let data = (value[0] as u32) << 16 | (value[1] as u32) << 8 | value[2] as u32;
+        u24 { data }
+    }
+}
+
+impl TryInto<usize> for u24 {
+    type Error = Error;
+
+    fn try_into(self) -> Result<usize, Self::Error> {
+        if self.data > 0xffffff {
+            return Err(Error::InvalidValue);
+        }
+
+        Ok(self.data as usize)
+    }
+}
+
+impl nom::ToUsize for u24 {
+    fn to_usize(&self) -> usize {
+        self.data as usize
     }
 }

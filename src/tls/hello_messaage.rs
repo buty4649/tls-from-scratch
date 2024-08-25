@@ -1,11 +1,7 @@
+use super::{be_u32, be_u8, take, Buffer, IResult};
 use super::{CipherSuite, Error, Opaque, ProtocolVersion, Vector};
 
 use enum_try_from::impl_enum_try_from;
-use nom::{
-    bytes::complete::take,
-    number::complete::{be_u16, be_u32, be_u8},
-    IResult,
-};
 use serde::Serialize;
 use serde_repr::Serialize_repr;
 
@@ -26,9 +22,9 @@ pub struct Random {
 }
 
 impl Random {
-    pub fn deserialize(input: &[u8]) -> IResult<&[u8], Self> {
+    pub fn deserialize(input: Buffer) -> IResult<Self> {
         let (input, gmt_unix_time) = be_u32(input)?;
-        let (input, random_bytes) = take(28u8)(input)?;
+        let (input, random_bytes) = take(input, 28u8)?;
 
         Ok((
             input,
@@ -71,12 +67,17 @@ pub struct ServerHello {
 }
 
 impl ServerHello {
-    pub fn deserialize(input: &[u8]) -> IResult<&[u8], Self> {
+    pub fn deserialize(input: Buffer) -> IResult<Self> {
         let (input, protocol_version) = ProtocolVersion::deserialize(input)?;
         let (input, random) = Random::deserialize(input)?;
         let (input, session_id) = Opaque::<u8>::deserialize(input)?;
         let (input, cipher_suite) = CipherSuite::deserialize(input)?;
         let (input, compression_method) = CompressionMethod::deserialize(input)?;
+
+        if input.length() > 0 {
+            eprintln!("Deserialize extension is not implemented");
+        }
+
         let extensions = Extensions {
             length: 0,
             data: vec![],
@@ -111,7 +112,7 @@ impl_enum_try_from! {
 }
 
 impl CompressionMethod {
-    pub fn deserialize(input: &[u8]) -> IResult<&[u8], Self> {
+    pub fn deserialize(input: Buffer) -> IResult<Self> {
         let (input, compression_method) = be_u8(input)?;
         let compression_metthod = CompressionMethod::try_from(compression_method).unwrap();
         Ok((input, compression_metthod))

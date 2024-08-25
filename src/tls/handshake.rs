@@ -1,26 +1,35 @@
 use super::hello_messaage::{ClientHello, ServerHello};
+use super::{be_u8, take, u24, Buffer, IResult, Opaque};
 
-use nom::{bytes::complete::take, number::complete::be_u8, IResult};
 use serde::Serialize;
 use serde_repr::Serialize_repr;
 
 #[derive(Serialize, Debug)]
 pub struct Handshake {
     pub msg_type: HandshakeType,
-    pub length: [u8; 3],
+    pub length: u24,
     pub body: HandshakeBody,
 }
 
-impl<'a> Handshake {
-    pub fn deserialize(input: &'a [u8]) -> IResult<&'a [u8], Self> {
+impl Handshake {
+    pub fn deserialize(input: Buffer) -> IResult<Self> {
         let (input, msg_type) = HandshakeType::deserialize(input)?;
-        let (input, length) = take(3u8)(input)?;
-        let length = length.try_into().unwrap();
-        let (input, body) = match msg_type {
+        let (input, length) = take(input, 3u8)?;
+        let length = u24::from(length);
+
+        let (input, fragment) = take(input, length)?;
+        let fragment = Buffer::new(fragment, length);
+
+        let body = match msg_type {
             HandshakeType::ServerHello => {
-                let (input, body) = ServerHello::deserialize(input)?;
-                (input, HandshakeBody::ServerHello(body))
+                let (_, body) = ServerHello::deserialize(fragment)?;
+                HandshakeBody::ServerHello(body)
             }
+            HandshakeType::Certificate => {
+                let (_, body) = Certificate::deserialize(fragment)?;
+                HandshakeBody::Certificate(body)
+            }
+            HandshakeType::ServerHelloDone => HandshakeBody::ServerHelloDone(()),
             _ => unimplemented!(),
         };
 
@@ -40,6 +49,8 @@ impl<'a> Handshake {
 pub enum HandshakeBody {
     ClientHello(ClientHello),
     ServerHello(ServerHello),
+    Certificate(Certificate),
+    ServerHelloDone(()),
 }
 
 #[allow(dead_code)]
@@ -59,7 +70,7 @@ pub enum HandshakeType {
 }
 
 impl HandshakeType {
-    pub fn deserialize(input: &[u8]) -> IResult<&[u8], Self> {
+    pub fn deserialize(input: Buffer) -> IResult<Self> {
         let (input, msg_type) = be_u8(input)?;
         let msg_type = match msg_type {
             0 => HandshakeType::HelloRequest,
@@ -76,5 +87,17 @@ impl HandshakeType {
         };
 
         Ok((input, msg_type))
+    }
+}
+
+#[derive(Serialize, Debug)]
+pub struct Certificate {
+    pub certificate_list: Opaque<u24>,
+}
+
+impl Certificate {
+    pub fn deserialize(input: Buffer) -> IResult<Self> {
+        let (input, certificate_list) = Opaque::<u24>::deserialize(input)?;
+        Ok((input, Certificate { certificate_list }))
     }
 }
