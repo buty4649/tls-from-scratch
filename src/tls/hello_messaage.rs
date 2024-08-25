@@ -15,7 +15,7 @@ pub struct ClientHello {
     pub extensions: Extensions,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone, Copy)]
 pub struct Random {
     pub gmt_unix_time: u32,
     pub random_bytes: [u8; 28],

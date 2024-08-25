@@ -10,3 +10,6 @@ serde = { version = "1.0", features = ["derive"] }
 serde_repr = "0.1"
 nom = "7.1"
 enum-try-from = "0.0.1"
+rsa = "0.9.6"
+x509-parser = "0.16"
+rand = "0.8.4"

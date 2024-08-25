@@ -35,7 +35,7 @@ pub struct TLSRecord {
     pub content_type: ContentType,
     pub protocol_version: ProtocolVersion,
     pub length: u16,
-    pub fragment: Handshake,
+    pub fragment: Fragment,
 }
 
 impl TLSRecord {
@@ -46,7 +46,21 @@ impl TLSRecord {
 
         let (input, fragment) = take(input, length)?;
         let fragment = Buffer::new(fragment, length as usize);
-        let (_, fragment) = Handshake::deserialize(fragment)?;
+        let fragment = match content_type {
+            ContentType::Handshake => {
+                let (_, handshake) = Handshake::deserialize(fragment)?;
+                Fragment::Handshake(handshake)
+            }
+            ContentType::ChangeCipherSpec => {
+                let (_, spec) = ChangeCipherSpec::deserialize(fragment)?;
+                Fragment::ChangeCipherSpec(spec)
+            }
+            ContentType::Alert => {
+                let (_, alert) = Alert::deserialize(fragment)?;
+                Fragment::Alert(alert)
+            }
+            _ => unimplemented!(),
+        };
 
         Ok((
             input,
@@ -57,6 +71,31 @@ impl TLSRecord {
                 fragment,
             },
         ))
+    }
+}
+
+#[derive(Serialize, Debug)]
+pub enum Fragment {
+    Handshake(Handshake),
+    ChangeCipherSpec(ChangeCipherSpec),
+    Alert(Alert),
+}
+
+impl_enum_try_from! {
+    #[repr(u8)]
+    #[derive(Serialize_repr, Debug)]
+    pub enum ChangeCipherSpec {
+        ChangeCipherSpec = 1,
+    },
+    u8,
+    Error,
+    Error::InvalidValue
+}
+
+impl ChangeCipherSpec {
+    pub fn deserialize(input: Buffer) -> IResult<Self> {
+        let (input, spec) = be_u8(input)?;
+        Ok((input, ChangeCipherSpec::try_from(spec).unwrap()))
     }
 }
 
@@ -222,6 +261,14 @@ impl u24 {
         let data = u24::from(data);
         Ok((input, data))
     }
+
+    pub fn to_u16(self) -> u16 {
+        self.data as u16
+    }
+
+    pub fn to_usize(self) -> usize {
+        self.data as usize
+    }
 }
 
 impl Serialize for u24 {
@@ -235,6 +282,12 @@ impl Serialize for u24 {
             (self.data & 0xff) as u8,
         ];
         serializer.serialize_bytes(&bytes)
+    }
+}
+
+impl From<u16> for u24 {
+    fn from(value: u16) -> Self {
+        u24 { data: value as u32 }
     }
 }
 
@@ -261,20 +314,82 @@ impl From<&[u8]> for u24 {
     }
 }
 
-impl TryInto<usize> for u24 {
-    type Error = Error;
-
-    fn try_into(self) -> Result<usize, Self::Error> {
-        if self.data > 0xffffff {
-            return Err(Error::InvalidValue);
-        }
-
-        Ok(self.data as usize)
-    }
-}
-
 impl nom::ToUsize for u24 {
     fn to_usize(&self) -> usize {
         self.data as usize
     }
+}
+
+#[derive(Serialize, Debug)]
+pub struct Alert {
+    pub level: AlertLevel,
+    pub description: AlertDescription,
+}
+
+impl Alert {
+    pub fn deserialize(input: Buffer) -> IResult<Self> {
+        let (input, level) = be_u8(input)?;
+        let level = AlertLevel::try_from(level).unwrap();
+        let (input, description) = be_u8(input)?;
+        let description = AlertDescription::try_from(description).unwrap();
+        Ok((input, Alert { level, description }))
+    }
+}
+
+impl_enum_try_from! {
+    #[allow(dead_code)]
+    #[repr(u8)]
+    #[derive(Serialize_repr, Debug)]
+    pub enum AlertLevel {
+        Warning = 1,
+        Fatal = 2,
+    },
+    u8,
+    Error,
+    Error::InvalidValue
+}
+
+impl_enum_try_from! {
+    #[allow(dead_code)]
+    #[repr(u8)]
+    #[derive(Serialize_repr, Debug)]
+    pub enum AlertDescription {
+        CloseNotify = 0,
+        UnexpectedMessage = 10,
+        BadRecordMac = 20,
+        DecryptionFailedReserved = 21,
+        RecordOverflow = 22,
+        DecompressionFailureReserved = 30,
+        HandshakeFailure = 40,
+        NoCertificateReserved = 41,
+        BadCertificate = 42,
+        UnsupportedCertificate = 43,
+        CertificateRevoked = 44,
+        CertificateExpired = 45,
+        CertificateUnknown = 46,
+        IllegalParameter = 47,
+        UnknownCa = 48,
+        AccessDenied = 49,
+        DecodeError = 50,
+        DecryptError = 51,
+        ExportRestrictionReserved = 60,
+        ProtocolVersion = 70,
+        InsufficientSecurity = 71,
+        InternalError = 80,
+        InappropriateFallback = 86,
+        UserCanceled = 90,
+        NoRenegotiationReserved = 100,
+        MissingExtension = 109,
+        UnsupportedExtension = 110,
+        CertificateUnobtainableReserved = 111,
+        UnrecognizedName = 112,
+        BadCertificateStatusResponse = 113,
+        BadCertificateHashValueReserved = 114,
+        UnknownPskIdentity = 115,
+        CertificateRequired = 116,
+        NoApplicationProtocol = 120,
+    },
+    u8,
+    Error,
+    Error::InvalidValue
 }
